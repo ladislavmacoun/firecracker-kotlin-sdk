@@ -1,5 +1,6 @@
 package org.firecracker.sdk.models
 
+import io.kotest.assertions.json.shouldEqualJson
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
@@ -8,7 +9,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class MetricsTest : DescribeSpec({
-    val json = Json { ignoreUnknownKeys = true }
+    val json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     describe("Metrics") {
         describe("creation") {
@@ -81,8 +86,13 @@ class MetricsTest : DescribeSpec({
             it("should serialize metrics to JSON") {
                 val metrics = Metrics.create("/tmp/metrics.json")
                 val jsonString = json.encodeToString(metrics)
+                val expectedJson = """
+                    {
+                        "metrics_path": "/tmp/metrics.json"
+                    }
+                """
 
-                jsonString shouldContain "\"metrics_path\":\"/tmp/metrics.json\""
+                jsonString shouldEqualJson expectedJson
             }
 
             it("should deserialize from JSON correctly") {
