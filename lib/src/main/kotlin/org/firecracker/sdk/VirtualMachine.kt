@@ -4,8 +4,12 @@ import kotlinx.coroutines.delay
 import org.firecracker.sdk.client.FirecrackerClient
 import org.firecracker.sdk.models.BootSource
 import org.firecracker.sdk.models.Drive
+import org.firecracker.sdk.models.Logger
 import org.firecracker.sdk.models.MachineConfiguration
+import org.firecracker.sdk.models.Metrics
 import org.firecracker.sdk.models.NetworkInterface
+import org.firecracker.sdk.models.SnapshotCreateParams
+import org.firecracker.sdk.models.SnapshotLoadParams
 
 /**
  * Represents a Firecracker virtual machine with high-level lifecycle management.
@@ -201,6 +205,128 @@ class VirtualMachine internal constructor(
 
                 delay(POLLING_INTERVAL_MS)
             }
+        }
+
+    /**
+     * Configure logging for the Firecracker VMM process.
+     *
+     * @param logger Logger configuration specifying output path and settings
+     * @return Result indicating success or failure
+     */
+    suspend fun configureLogger(logger: Logger): Result<Unit> =
+        runCatching {
+            currentState = State.STARTING
+            client.put("/logger", logger)
+                .fold(
+                    onSuccess = { },
+                    onFailure = {
+                        currentState = State.ERROR
+                        throw it
+                    },
+                )
+        }
+
+    /**
+     * Configure metrics collection for the Firecracker VMM process.
+     *
+     * @param metrics Metrics configuration specifying output path
+     * @return Result indicating success or failure
+     */
+    suspend fun configureMetrics(metrics: Metrics): Result<Unit> =
+        runCatching {
+            currentState = State.STARTING
+            client.put("/metrics", metrics)
+                .fold(
+                    onSuccess = { },
+                    onFailure = {
+                        currentState = State.ERROR
+                        throw it
+                    },
+                )
+        }
+
+    /**
+     * Create a snapshot of the current VM state.
+     *
+     * The VM must be in a paused state to create a snapshot.
+     *
+     * @param params Snapshot creation parameters
+     * @return Result indicating success or failure
+     */
+    suspend fun createSnapshot(params: SnapshotCreateParams): Result<Unit> =
+        runCatching {
+            client.put("/snapshot/create", params)
+                .fold(
+                    onSuccess = { },
+                    onFailure = { throw it },
+                )
+        }
+
+    /**
+     * Load VM state from a snapshot.
+     *
+     * This can only be done when creating a new VM instance.
+     *
+     * @param params Snapshot load parameters
+     * @return Result indicating success or failure
+     */
+    suspend fun loadSnapshot(params: SnapshotLoadParams): Result<Unit> =
+        runCatching {
+            currentState = State.STARTING
+            client.put("/snapshot/load", params)
+                .fold(
+                    onSuccess = {
+                        if (params.resumeVm) {
+                            currentState = State.RUNNING
+                        }
+                    },
+                    onFailure = {
+                        currentState = State.ERROR
+                        throw it
+                    },
+                )
+        }
+
+    /**
+     * Pause the VM execution.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun pause(): Result<Unit> =
+        runCatching {
+            if (currentState != State.RUNNING) {
+                throw VMException("Cannot pause VM '$name' in state $currentState")
+            }
+
+            client.put("/actions", mapOf("action_type" to "Pause"))
+                .fold(
+                    onSuccess = { currentState = State.STOPPING },
+                    onFailure = {
+                        currentState = State.ERROR
+                        throw it
+                    },
+                )
+        }
+
+    /**
+     * Resume the VM execution after pause.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun resume(): Result<Unit> =
+        runCatching {
+            if (currentState != State.STOPPING) {
+                throw VMException("Cannot resume VM '$name' in state $currentState")
+            }
+
+            client.put("/actions", mapOf("action_type" to "Resume"))
+                .fold(
+                    onSuccess = { currentState = State.RUNNING },
+                    onFailure = {
+                        currentState = State.ERROR
+                        throw it
+                    },
+                )
         }
 
     /**
