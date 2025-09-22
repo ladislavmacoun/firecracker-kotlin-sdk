@@ -3,7 +3,9 @@ package org.firecracker.sdk
 import org.firecracker.sdk.models.Bandwidth
 import org.firecracker.sdk.models.BootSource
 import org.firecracker.sdk.models.Drive
+import org.firecracker.sdk.models.Logger
 import org.firecracker.sdk.models.MachineConfiguration
+import org.firecracker.sdk.models.Metrics
 import org.firecracker.sdk.models.NetworkInterface
 import org.firecracker.sdk.models.Operations
 import org.firecracker.sdk.models.RateLimiter
@@ -73,6 +75,10 @@ class VMBuilder {
     // Drive configuration
     private val drives = mutableListOf<Drive>()
 
+    // Logging and metrics
+    var logger: Logger? = null
+    var metrics: Metrics? = null
+
     /**
      * Add a network interface to the VM configuration.
      */
@@ -99,6 +105,45 @@ class VMBuilder {
         isReadOnly: Boolean = false,
     ) {
         drives.add(Drive.rootDrive("root", path, isReadOnly))
+    }
+
+    /**
+     * Configure logging for the Firecracker VMM process.
+     */
+    fun logging(
+        logPath: String,
+        level: org.firecracker.sdk.models.LogLevel = org.firecracker.sdk.models.LogLevel.Warn,
+        showLevel: Boolean = false,
+        showLogOrigin: Boolean = false,
+    ) {
+        logger =
+            Logger(
+                logPath = logPath,
+                level = level,
+                showLevel = showLevel,
+                showLogOrigin = showLogOrigin,
+            )
+    }
+
+    /**
+     * Configure debug logging with detailed output.
+     */
+    fun debugLogging(logPath: String) {
+        logger = Logger.debug(logPath)
+    }
+
+    /**
+     * Configure metrics collection.
+     */
+    fun metrics(metricsPath: String) {
+        metrics = Metrics.create(metricsPath)
+    }
+
+    /**
+     * Configure metrics collection for this VM instance with auto-generated filename.
+     */
+    fun autoMetrics(baseDir: String = "/tmp") {
+        metrics = Metrics.forVm(name, baseDir)
     }
 
     /**
