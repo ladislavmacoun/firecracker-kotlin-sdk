@@ -114,8 +114,9 @@ public class MachineConfigurationTest : DescribeSpec({
                     )
 
                 val jsonString = json.encodeToString(config)
-                val expectedJson = """{"vcpu_count":4,"mem_size_mib":1024,"smt":true,""" +
-                    """"cpu_template":"T2","huge_pages":"2M"}"""
+                val expectedJson =
+                    """{"vcpu_count":4,"mem_size_mib":1024,"smt":true,""" +
+                        """"cpu_template":"T2","huge_pages":"2M"}"""
 
                 jsonString shouldBe expectedJson
             }

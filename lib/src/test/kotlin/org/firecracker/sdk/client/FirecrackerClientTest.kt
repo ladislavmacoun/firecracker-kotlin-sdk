@@ -2,8 +2,10 @@ package org.firecracker.sdk.client
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.instanceOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import org.firecracker.sdk.models.MachineConfiguration
@@ -36,9 +38,10 @@ public class FirecrackerClientTest : DescribeSpec({
                 runTest {
                     // This test would normally require a mock or test server
                     // For now, we'll test the API structure
-                    shouldThrow<FirecrackerClientException> {
-                        client.get<TestResponse>("/")
-                    }
+                    val result = client.get<TestResponse>("/")
+
+                    result.isFailure shouldBe true
+                    result.exceptionOrNull() shouldBe instanceOf<ClientError>()
                 }
             }
 
@@ -46,9 +49,10 @@ public class FirecrackerClientTest : DescribeSpec({
                 runTest {
                     val config = MachineConfiguration(vcpuCount = 2, memSizeMib = 512)
 
-                    shouldThrow<FirecrackerClientException> {
-                        client.put("/machine-config", config)
-                    }
+                    val result = client.put("/machine-config", config)
+
+                    result.isFailure shouldBe true
+                    result.exceptionOrNull() shouldBe instanceOf<ClientError>()
                 }
             }
 
@@ -56,9 +60,10 @@ public class FirecrackerClientTest : DescribeSpec({
                 runTest {
                     val config = MachineConfiguration(vcpuCount = 4, memSizeMib = 1024)
 
-                    shouldThrow<FirecrackerClientException> {
-                        client.patch("/machine-config", config)
-                    }
+                    val result = client.patch("/machine-config", config)
+
+                    result.isFailure shouldBe true
+                    result.exceptionOrNull() shouldBe instanceOf<ClientError>()
                 }
             }
 
@@ -66,27 +71,27 @@ public class FirecrackerClientTest : DescribeSpec({
                 runTest {
                     val client = FirecrackerClient("/nonexistent/socket/path")
 
-                    val exception =
-                        shouldThrow<FirecrackerClientException> {
-                            client.get<TestResponse>("/")
-                        }
+                    val result = client.get<TestResponse>("/")
 
-                    exception.message shouldContain "Failed to connect"
+                    result.isFailure shouldBe true
+                    val error = result.exceptionOrNull()
+                    error shouldBe instanceOf<ClientError>()
+                    error?.message shouldContain "Failed to connect"
                 }
             }
         }
 
         describe("error handling") {
-            it("should wrap HTTP errors in FirecrackerClientException") {
+            it("should wrap HTTP errors in ClientError sealed class") {
                 runTest {
                     val client = FirecrackerClient("/tmp/test.socket")
 
-                    val exception =
-                        shouldThrow<FirecrackerClientException> {
-                            client.get<TestResponse>("/invalid-endpoint")
-                        }
+                    val result = client.get<TestResponse>("/invalid-endpoint")
 
-                    exception.message shouldNotBe null
+                    result.isFailure shouldBe true
+                    val error = result.exceptionOrNull()
+                    error shouldBe instanceOf<ClientError>()
+                    error?.message shouldNotBe null
                 }
             }
         }
