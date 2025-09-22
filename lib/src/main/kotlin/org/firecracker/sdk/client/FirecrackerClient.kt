@@ -20,6 +20,24 @@ import kotlinx.serialization.json.Json
 import java.io.IOException
 
 /**
+ * Sealed class representing different types of client errors.
+ * This follows Kotlin idioms for error handling without exceptions.
+ */
+sealed class ClientError(message: String, cause: Throwable? = null) : Throwable(message, cause) {
+    data class NetworkTimeout(val socketPath: String, val originalCause: Throwable? = null) :
+        ClientError("Request timeout connecting to Firecracker at $socketPath", originalCause)
+
+    data class NetworkIO(val socketPath: String, val originalCause: Throwable? = null) :
+        ClientError("IO error connecting to Firecracker at $socketPath", originalCause)
+
+    data class Serialization(val socketPath: String, val originalCause: Throwable? = null) :
+        ClientError("Failed to parse response from Firecracker at $socketPath", originalCause)
+
+    data class Unknown(val socketPath: String, val originalCause: Throwable? = null) :
+        ClientError("Failed to connect to Firecracker at $socketPath", originalCause)
+}
+
+/**
  * Exception thrown when Firecracker client operations fail.
  */
 class FirecrackerClientException(
@@ -69,66 +87,66 @@ class FirecrackerClient(
             }
         }
 
-    suspend inline fun <reified T> get(path: String): T {
-        return try {
-            httpClient.get(buildUrl(path)).body()
-        } catch (e: Exception) {
-            throw when (e) {
-                is HttpRequestTimeoutException ->
-                    FirecrackerClientException("Request timeout connecting to Firecracker at $socketPath", e)
-                is IOException ->
-                    FirecrackerClientException("IO error connecting to Firecracker at $socketPath", e)
-                is SerializationException ->
-                    FirecrackerClientException("Failed to parse response from Firecracker at $socketPath", e)
-                else ->
-                    FirecrackerClientException("Failed to connect to Firecracker at $socketPath", e)
-            }
-        }
-    }
+    suspend inline fun <reified T> get(path: String): Result<T> =
+        runCatching {
+            httpClient.get(buildUrl(path)).body<T>()
+        }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { e ->
+                Result.failure(
+                    when (e) {
+                        is HttpRequestTimeoutException -> ClientError.NetworkTimeout(socketPath, e)
+                        is IOException -> ClientError.NetworkIO(socketPath, e)
+                        is SerializationException -> ClientError.Serialization(socketPath, e)
+                        else -> ClientError.Unknown(socketPath, e)
+                    },
+                )
+            },
+        )
 
     suspend inline fun <reified T> put(
         path: String,
         body: T,
-    ) {
-        try {
+    ): Result<Unit> =
+        runCatching {
             httpClient.put(buildUrl(path)) {
                 setBody(body)
             }
-        } catch (e: Exception) {
-            throw when (e) {
-                is HttpRequestTimeoutException ->
-                    FirecrackerClientException("Request timeout connecting to Firecracker at $socketPath", e)
-                is IOException ->
-                    FirecrackerClientException("IO error connecting to Firecracker at $socketPath", e)
-                is SerializationException ->
-                    FirecrackerClientException("Failed to serialize request body for Firecracker at $socketPath", e)
-                else ->
-                    FirecrackerClientException("Failed to connect to Firecracker at $socketPath", e)
-            }
-        }
-    }
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { e ->
+                Result.failure(
+                    when (e) {
+                        is HttpRequestTimeoutException -> ClientError.NetworkTimeout(socketPath, e)
+                        is IOException -> ClientError.NetworkIO(socketPath, e)
+                        is SerializationException -> ClientError.Serialization(socketPath, e)
+                        else -> ClientError.Unknown(socketPath, e)
+                    },
+                )
+            },
+        )
 
     suspend inline fun <reified T> patch(
         path: String,
         body: T,
-    ) {
-        try {
+    ): Result<Unit> =
+        runCatching {
             httpClient.patch(buildUrl(path)) {
                 setBody(body)
             }
-        } catch (e: Exception) {
-            throw when (e) {
-                is HttpRequestTimeoutException ->
-                    FirecrackerClientException("Request timeout connecting to Firecracker at $socketPath", e)
-                is IOException ->
-                    FirecrackerClientException("IO error connecting to Firecracker at $socketPath", e)
-                is SerializationException ->
-                    FirecrackerClientException("Failed to serialize request body for Firecracker at $socketPath", e)
-                else ->
-                    FirecrackerClientException("Failed to connect to Firecracker at $socketPath", e)
-            }
-        }
-    }
+        }.fold(
+            onSuccess = { Result.success(Unit) },
+            onFailure = { e ->
+                Result.failure(
+                    when (e) {
+                        is HttpRequestTimeoutException -> ClientError.NetworkTimeout(socketPath, e)
+                        is IOException -> ClientError.NetworkIO(socketPath, e)
+                        is SerializationException -> ClientError.Serialization(socketPath, e)
+                        else -> ClientError.Unknown(socketPath, e)
+                    },
+                )
+            },
+        )
 
     fun close() {
         httpClient.close()

@@ -7,8 +7,9 @@ build
 # Ignore Kotlin compiler sessions and temporary files
 .kotlin/
 
-# Ignore compiled classes in bin directory  
+# Ignore compiled classes in bin directory
 lib/bin/
 
-# Implementation plan (development notes)
-IMPLEMENTATION_PLAN.md
+# Ignore all markdown files except README.md
+*.md
+!README.md

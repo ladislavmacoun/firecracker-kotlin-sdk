@@ -12,14 +12,15 @@ class FirecrackerTest : DescribeSpec({
 
         describe("VM creation") {
             it("should create VM with DSL builder") {
-                val vm = Firecracker.createVM {
-                    name = "test-vm"
-                    vcpus = 4
-                    memory = 2048
-                    kernel = "/path/to/kernel"
-                    rootfs = "/path/to/rootfs"
-                    enableSmt = true
-                }
+                val vm =
+                    Firecracker.createVM {
+                        name = "test-vm"
+                        vcpus = 4
+                        memory = 2048
+                        kernel = "/path/to/kernel"
+                        rootDrive("/path/to/rootfs")
+                        enableSmt = true
+                    }
 
                 vm shouldNotBe null
                 vm.name shouldBe "test-vm"
@@ -33,30 +34,19 @@ class FirecrackerTest : DescribeSpec({
                         name = "test-vm"
                         vcpus = 2
                         memory = 1024
-                        rootfs = "/path/to/rootfs"
+                        rootDrive("/path/to/rootfs")
                         // kernel not set
                     }
                 }.message shouldContain "Kernel path is required"
             }
 
-            it("should require rootfs path") {
-                shouldThrow<IllegalArgumentException> {
-                    Firecracker.createVM {
-                        name = "test-vm"
-                        vcpus = 2
-                        memory = 1024
-                        kernel = "/path/to/kernel"
-                        // rootfs not set
-                    }
-                }.message shouldContain "Root filesystem path is required"
-            }
-
             it("should provide sensible defaults") {
-                val vm = Firecracker.createVM {
-                    name = "minimal-vm"
-                    kernel = "/path/to/kernel"
-                    rootfs = "/path/to/rootfs"
-                }
+                val vm =
+                    Firecracker.createVM {
+                        name = "minimal-vm"
+                        kernel = "/path/to/kernel"
+                        rootDrive("/path/to/rootfs")
+                    }
 
                 vm.name shouldBe "minimal-vm"
                 // Other defaults should be applied
