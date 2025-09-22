@@ -2,7 +2,7 @@
 
 A Kotlin-first SDK for interacting with [Firecracker microVMs](https://firecracker-microvm.github.io/), with full Java interoperability.
 
-[![CI](https://github.com/ladislavmacoun/firecracker-java-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/ladislavmacoun/firecracker-java-sdk/actions/workflows/ci.yml)
+[![CI](https://github.com/ladislavmacoun/firecracker-kotlin-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/ladislavmacoun/firecracker-kotlin-sdk/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Features
@@ -80,7 +80,7 @@ vm.start()
 
 ```kotlin
 dependencies {
-    implementation("org.firecracker:firecracker-sdk:1.0.0")
+    implementation("org.firecracker:firecracker-kotlin-sdk:1.0.0")
 }
 ```
 
@@ -88,7 +88,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'org.firecracker:firecracker-sdk:1.0.0'
+    implementation 'org.firecracker:firecracker-kotlin-sdk:1.0.0'
 }
 ```
 
@@ -97,7 +97,7 @@ dependencies {
 ```xml
 <dependency>
     <groupId>org.firecracker</groupId>
-    <artifactId>firecracker-sdk</artifactId>
+    <artifactId>firecracker-kotlin-sdk</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```

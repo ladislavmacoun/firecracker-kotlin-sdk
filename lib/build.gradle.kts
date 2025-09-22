@@ -126,10 +126,12 @@ publishing {
         create<MavenPublication>("maven") {
             from(components["java"])
 
+            artifactId = "firecracker-kotlin-sdk"
+
             pom {
                 name.set("Firecracker Kotlin SDK")
                 description.set("A Kotlin-first SDK for interacting with Firecracker microVMs")
-                url.set("https://github.com/lada-macoun/firecracker-java-sdk")
+                url.set("https://github.com/ladislavmacoun/firecracker-kotlin-sdk")
 
                 licenses {
                     license {
@@ -147,9 +149,9 @@ publishing {
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/lada-macoun/firecracker-java-sdk.git")
-                    developerConnection.set("scm:git:ssh://github.com/lada-macoun/firecracker-java-sdk.git")
-                    url.set("https://github.com/lada-macoun/firecracker-java-sdk")
+                    connection.set("scm:git:git://github.com/ladislavmacoun/firecracker-kotlin-sdk.git")
+                    developerConnection.set("scm:git:ssh://github.com/ladislavmacoun/firecracker-kotlin-sdk.git")
+                    url.set("https://github.com/ladislavmacoun/firecracker-kotlin-sdk")
                 }
             }
         }
