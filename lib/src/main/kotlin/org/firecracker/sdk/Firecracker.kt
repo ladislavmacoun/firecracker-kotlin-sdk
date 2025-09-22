@@ -9,6 +9,7 @@ import org.firecracker.sdk.models.Metrics
 import org.firecracker.sdk.models.NetworkInterface
 import org.firecracker.sdk.models.Operations
 import org.firecracker.sdk.models.RateLimiter
+import org.firecracker.sdk.models.VSock
 
 /**
  * Main entry point for the Firecracker SDK.
@@ -56,6 +57,7 @@ object Firecracker {
 /**
  * Builder for creating virtual machine configurations with a fluent DSL.
  */
+@Suppress("TooManyFunctions") // Builder pattern requires multiple configuration methods
 class VMBuilder {
     var name: String = "firecracker-vm"
     var vcpus: Int = 1
@@ -78,6 +80,9 @@ class VMBuilder {
     // Logging and metrics
     var logger: Logger? = null
     var metrics: Metrics? = null
+
+    // VSock configuration
+    var vsock: VSock? = null
 
     /**
      * Add a network interface to the VM configuration.
@@ -144,6 +149,49 @@ class VMBuilder {
      */
     fun autoMetrics(baseDir: String = "/tmp") {
         metrics = Metrics.forVm(name, baseDir)
+    }
+
+    /**
+     * Configure VSock device for host-guest communication.
+     *
+     * @param guestCid Context identifier for the guest (must be >= 3)
+     * @param udsPath Path to Unix Domain Socket
+     * @param vsockId Device identifier (optional)
+     */
+    fun vsock(
+        guestCid: UInt,
+        udsPath: String,
+        vsockId: String = "vsock",
+    ) {
+        vsock = VSock.create(guestCid, udsPath, vsockId)
+    }
+
+    /**
+     * Configure VSock device for this VM instance with auto-generated socket path.
+     *
+     * @param guestCid Context identifier for the guest (optional, auto-generated if not provided)
+     * @param baseDir Base directory for socket files (defaults to /tmp)
+     */
+    fun autoVSock(
+        guestCid: UInt? = null,
+        baseDir: String = "/tmp",
+    ) {
+        vsock = VSock.forVm(name, baseDir, guestCid)
+    }
+
+    /**
+     * Configure VSock device with custom socket name.
+     *
+     * @param guestCid Context identifier for the guest
+     * @param socketName Socket filename
+     * @param baseDir Base directory for socket files (defaults to /tmp)
+     */
+    fun vsockSocket(
+        guestCid: UInt,
+        socketName: String,
+        baseDir: String = "/tmp",
+    ) {
+        vsock = VSock.withSocketName(guestCid, socketName, baseDir)
     }
 
     /**

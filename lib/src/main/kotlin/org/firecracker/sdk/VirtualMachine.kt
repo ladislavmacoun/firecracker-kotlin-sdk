@@ -10,6 +10,7 @@ import org.firecracker.sdk.models.Metrics
 import org.firecracker.sdk.models.NetworkInterface
 import org.firecracker.sdk.models.SnapshotCreateParams
 import org.firecracker.sdk.models.SnapshotLoadParams
+import org.firecracker.sdk.models.VSock
 
 /**
  * Represents a Firecracker virtual machine with high-level lifecycle management.
@@ -327,6 +328,48 @@ class VirtualMachine internal constructor(
                         throw it
                     },
                 )
+        }
+
+    /**
+     * Configure VSock device for host-guest communication.
+     *
+     * VSock provides a secure channel for communication between the host
+     * and guest VM through Unix Domain Sockets.
+     *
+     * @param vsock VSock device configuration
+     * @return Result indicating success or failure
+     */
+    suspend fun configureVSock(vsock: VSock): Result<Unit> =
+        runCatching {
+            client.put("/vsock", vsock)
+                .onFailure { throw it }
+        }
+
+    /**
+     * Get current VSock device configuration.
+     *
+     * @return Current VSock configuration or null if not configured
+     */
+    suspend fun getVSock(): Result<VSock?> =
+        runCatching {
+            client.get<VSock>("/vsock")
+                .fold(
+                    onSuccess = { it },
+                    onFailure = { null },
+                )
+        }
+
+    /**
+     * Remove VSock device configuration.
+     *
+     * @return Result indicating success or failure
+     */
+    suspend fun removeVSock(): Result<Unit> =
+        runCatching {
+            // Note: Firecracker doesn't have a direct delete for VSock,
+            // but we can try to get and handle appropriately
+            client.patch("/vsock", mapOf("guest_cid" to 0))
+                .onFailure { throw it }
         }
 
     /**
