@@ -1,14 +1,18 @@
 package org.firecracker.sdk.models
 
+import io.kotest.assertions.json.shouldEqualJson
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class LoggerTest : DescribeSpec({
-    val json = Json { ignoreUnknownKeys = true }
+    val json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     describe("Logger") {
         describe("creation") {
@@ -92,16 +96,19 @@ class LoggerTest : DescribeSpec({
         }
 
         describe("serialization") {
-            // Note: Serialization test simplified - complex JSON matching prone to formatting issues
-            it("should serialize and deserialize logger correctly") {
+            it("should serialize logger with defaults correctly") {
                 val logger = Logger.create("/tmp/firecracker.log")
                 val jsonString = json.encodeToString(logger)
-                val deserialized = json.decodeFromString<Logger>(jsonString)
+                val expectedJson = """
+                    {
+                        "log_path": "/tmp/firecracker.log",
+                        "level": "Warn",
+                        "show_level": false,
+                        "show_log_origin": false
+                    }
+                """
 
-                deserialized.logPath shouldBe logger.logPath
-                deserialized.level shouldBe logger.level
-                deserialized.showLevel shouldBe logger.showLevel
-                deserialized.showLogOrigin shouldBe logger.showLogOrigin
+                jsonString shouldEqualJson expectedJson
             }
 
             it("should serialize complete logger to JSON") {
@@ -113,11 +120,16 @@ class LoggerTest : DescribeSpec({
                         showLogOrigin = true,
                     )
                 val jsonString = json.encodeToString(logger)
+                val expectedJson = """
+                    {
+                        "log_path": "/var/log/firecracker.log",
+                        "level": "Debug",
+                        "show_level": true,
+                        "show_log_origin": true
+                    }
+                """
 
-                jsonString shouldContain "\"log_path\":\"/var/log/firecracker.log\""
-                jsonString shouldContain "\"level\":\"Debug\""
-                jsonString shouldContain "\"show_level\":true"
-                jsonString shouldContain "\"show_log_origin\":true"
+                jsonString shouldEqualJson expectedJson
             }
 
             it("should deserialize from JSON correctly") {

@@ -1,5 +1,6 @@
 package org.firecracker.sdk.models
 
+import io.kotest.assertions.json.shouldEqualJson
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
@@ -8,7 +9,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class SnapshotTest : DescribeSpec({
-    val json = Json { ignoreUnknownKeys = true }
+    val json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     describe("SnapshotCreateParams") {
         describe("creation") {
@@ -115,10 +120,16 @@ class SnapshotTest : DescribeSpec({
                         "/tmp/memory.mem",
                     )
                 val jsonString = json.encodeToString(params)
+                val expectedJson = """
+                    {
+                        "snapshot_type": "Full",
+                        "snapshot_path": "/tmp/snapshot.json",
+                        "mem_file_path": "/tmp/memory.mem",
+                        "version": null
+                    }
+                """
 
-                jsonString shouldContain "\"snapshot_type\":\"Full\""
-                jsonString shouldContain "\"snapshot_path\":\"/tmp/snapshot.json\""
-                jsonString shouldContain "\"mem_file_path\":\"/tmp/memory.mem\""
+                jsonString shouldEqualJson expectedJson
             }
 
             it("should serialize diff snapshot with version") {
