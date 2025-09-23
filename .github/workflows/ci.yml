@@ -46,8 +46,8 @@ jobs:
         uses: dorny/test-reporter@v1
         if: success() || failure()
         with:
-          name: Test Results
-          path: "**/TEST-*.xml"
+          name: Unit Test Results
+          path: "lib/build/test-results/test/TEST-*.xml"
           reporter: java-junit
 
       - name: Upload test results
@@ -105,6 +105,14 @@ jobs:
         env:
           # TestContainers configuration
           TESTCONTAINERS_RYUK_DISABLED: true
+
+      - name: Generate integration test report
+        uses: dorny/test-reporter@v1
+        if: success() || failure()
+        with:
+          name: Integration Test Results
+          path: "lib/build/test-results/integrationTest/TEST-*.xml"
+          reporter: java-junit
 
       - name: Upload integration test results
         uses: actions/upload-artifact@v4

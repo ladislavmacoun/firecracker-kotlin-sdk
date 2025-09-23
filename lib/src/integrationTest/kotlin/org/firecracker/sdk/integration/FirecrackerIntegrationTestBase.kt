@@ -31,9 +31,9 @@ abstract class FirecrackerIntegrationTestBase : DescribeSpec() {
 
     companion object {
         // Use more accessible test resources
-        private const val TEST_KERNEL_URL = 
+        private const val TEST_KERNEL_URL =
             "https://github.com/firecracker-microvm/firecracker/releases/download/v1.7.0/vmlinux.bin"
-        private const val TEST_ROOTFS_URL = 
+        private const val TEST_ROOTFS_URL =
             "https://github.com/firecracker-microvm/firecracker-demo/releases/download/v1.0.0/hello-rootfs.ext4"
 
         private val kernelPath = Paths.get(System.getProperty("java.io.tmpdir"), "vmlinux.bin")
