@@ -131,13 +131,24 @@ The project uses automated quality checks:
 ./gradlew check
 ```
 
-### Pre-commit Hooks
+### Git Hooks
 
-Pre-commit hooks automatically run:
+The project uses git hooks to maintain code quality and consistent commit messages automatically:
 
-- ktlint formatting
-- detekt static analysis
+**Pre-commit Hook**: Automatically runs before each commit:
+
+- ktlint code formatting
+- detekt static analysis  
 - unit tests
+
+**Commit Message Hook**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) format:
+
+- `feat: add new feature`
+- `fix: resolve bug in API`
+- `docs: update README`
+- `test: add unit tests`
+
+To bypass hooks temporarily: `git commit --no-verify`
 
 ## API Reference
 
