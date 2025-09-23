@@ -16,6 +16,8 @@ import org.firecracker.sdk.models.NetworkInterface
 import org.firecracker.sdk.models.SnapshotCreateParams
 import org.firecracker.sdk.models.SnapshotLoadParams
 import org.firecracker.sdk.models.VSock
+import org.firecracker.sdk.snapshot.SnapshotConfiguration
+import org.firecracker.sdk.snapshot.SnapshotStrategy
 
 /**
  * Represents a Firecracker virtual machine with comprehensive lifecycle management.
@@ -83,6 +85,21 @@ import org.firecracker.sdk.models.VSock
  * // Snapshot for backup/migration
  * vm.createSnapshot(SnapshotCreateParams.full("/backup/snapshot.json", "/backup/memory.bin"))
  *     .onSuccess { println("Snapshot created") }
+ *
+ * // Or use advanced snapshot management
+ * val vm2 = Firecracker.createVM {
+ *     name = "backup-vm"
+ *     // ... other configuration
+ *     productionSnapshots("/backup/snapshots") // Configure snapshot strategy
+ * }
+ *
+ * // Create snapshots with automatic naming
+ * vm2.createSnapshot(SnapshotStrategy.BACKUP, suffix = "before-update")
+ *     .onSuccess { snapshotName -> println("Created snapshot: $snapshotName") }
+ *
+ * // Pause, snapshot, and resume workflow
+ * vm2.pauseAndSnapshot(SnapshotConfiguration.backup("my-vm"), resumeAfterSnapshot = true)
+ *     .onSuccess { snapshotName -> println("Safe backup created: $snapshotName") }
  * ```
  *
  * ## Error Handling
@@ -497,6 +514,61 @@ class VirtualMachine internal constructor(
         }
 
     /**
+     * Create a snapshot using advanced configuration.
+     *
+     * @param config Snapshot configuration with automatic path generation
+     * @param suffix Optional suffix for the snapshot name
+     * @return Result indicating success or failure with the snapshot name
+     */
+    suspend fun createSnapshot(
+        config: SnapshotConfiguration,
+        suffix: String? = null,
+    ): Result<String> =
+        runCatching {
+            val params = config.createSnapshot(suffix = suffix)
+            client.put("/snapshot/create", params)
+                .fold(
+                    onSuccess = {
+                        // Extract snapshot name from path
+                        params.snapshotPath.substringAfterLast("/").substringBeforeLast(".")
+                    },
+                    onFailure = { throw it },
+                )
+        }
+
+    /**
+     * Create a snapshot with automatic configuration based on strategy.
+     *
+     * @param strategy Snapshot strategy (development, production, backup, etc.)
+     * @param baseDir Optional override for base directory
+     * @param suffix Optional suffix for the snapshot name
+     * @return Result indicating success or failure with the snapshot name
+     */
+    suspend fun createSnapshot(
+        strategy: SnapshotStrategy,
+        baseDir: String? = null,
+        suffix: String? = null,
+    ): Result<String> {
+        val config =
+            when (strategy) {
+                SnapshotStrategy.DEVELOPMENT -> SnapshotConfiguration.development(name, baseDir ?: "/tmp/dev-snapshots")
+                SnapshotStrategy.PRODUCTION -> SnapshotConfiguration.production(name, baseDir ?: "/opt/snapshots")
+                SnapshotStrategy.BACKUP -> SnapshotConfiguration.backup(name, baseDir ?: "/backup/snapshots")
+                SnapshotStrategy.MIGRATION -> SnapshotConfiguration.migration(name, baseDir ?: "/tmp/migration")
+                SnapshotStrategy.TESTING -> SnapshotConfiguration.testing(name, baseDir ?: "/tmp/test-snapshots")
+            }
+        return createSnapshot(config, suffix)
+    }
+
+    /**
+     * Create a quick snapshot for development/testing.
+     *
+     * @param suffix Optional suffix for the snapshot name
+     * @return Result indicating success or failure with the snapshot name
+     */
+    suspend fun createQuickSnapshot(suffix: String? = null): Result<String> = createSnapshot(SnapshotStrategy.DEVELOPMENT, suffix = suffix)
+
+    /**
      * Load VM state from a snapshot.
      *
      * This can only be done when creating a new VM instance.
@@ -520,6 +592,66 @@ class VirtualMachine internal constructor(
                     },
                 )
         }
+
+    /**
+     * Load VM state from a snapshot using configuration.
+     *
+     * @param config Snapshot configuration
+     * @param snapshotName Name of the snapshot to load
+     * @param resumeVm Whether to resume the VM after loading
+     * @param enableDiffSnapshots Whether to enable differential snapshots after loading
+     * @return Result indicating success or failure
+     */
+    suspend fun loadSnapshot(
+        config: SnapshotConfiguration,
+        snapshotName: String,
+        resumeVm: Boolean = false,
+        enableDiffSnapshots: Boolean = false,
+    ): Result<Unit> {
+        val params = config.loadSnapshot(snapshotName, resumeVm, enableDiffSnapshots)
+        return loadSnapshot(params)
+    }
+
+    /**
+     * Load the latest snapshot for this VM.
+     *
+     * @param config Snapshot configuration
+     * @param resumeVm Whether to resume the VM after loading
+     * @return Result indicating success or failure
+     */
+    suspend fun loadLatestSnapshot(
+        config: SnapshotConfiguration,
+        resumeVm: Boolean = false,
+    ): Result<Unit> {
+        val snapshots = config.listSnapshots()
+        if (snapshots.isEmpty()) {
+            return Result.failure(VMException("No snapshots found for VM '$name'"))
+        }
+
+        val latestSnapshot = snapshots.last() // Snapshots are sorted
+        return loadSnapshot(config, latestSnapshot, resumeVm)
+    }
+
+    /**
+     * Restore VM from a migration snapshot.
+     *
+     * @param migrationDir Directory containing migration snapshots
+     * @param migrationId Migration identifier (optional)
+     * @return Result indicating success or failure
+     */
+    suspend fun restoreFromMigration(
+        migrationDir: String,
+        migrationId: String? = null,
+    ): Result<Unit> {
+        val config = SnapshotConfiguration.migration(name, migrationDir)
+
+        return if (migrationId != null) {
+            val snapshotName = "migration-$name-$migrationId"
+            loadSnapshot(config, snapshotName, resumeVm = true)
+        } else {
+            loadLatestSnapshot(config, resumeVm = true)
+        }
+    }
 
     /**
      * Pause the VM execution.
@@ -561,6 +693,110 @@ class VirtualMachine internal constructor(
                         throw it
                     },
                 )
+        }
+
+    /**
+     * Create a snapshot and pause workflow for safe backup.
+     *
+     * This method pauses the VM, creates a snapshot, and optionally resumes the VM.
+     *
+     * @param config Snapshot configuration
+     * @param suffix Optional suffix for the snapshot name
+     * @param resumeAfterSnapshot Whether to resume the VM after creating the snapshot
+     * @return Result with the snapshot name or error
+     */
+    suspend fun pauseAndSnapshot(
+        config: SnapshotConfiguration,
+        suffix: String? = null,
+        resumeAfterSnapshot: Boolean = true,
+    ): Result<String> =
+        runCatching {
+            // Pause the VM first
+            pause().getOrThrow()
+
+            try {
+                // Create the snapshot
+                val snapshotName = createSnapshot(config, suffix).getOrThrow()
+
+                // Resume if requested
+                if (resumeAfterSnapshot) {
+                    resume().getOrThrow()
+                }
+
+                snapshotName
+            } catch (e: Exception) {
+                // If snapshot failed, try to resume the VM anyway
+                if (resumeAfterSnapshot) {
+                    resume().onFailure { resumeError ->
+                        // Log that both snapshot and resume failed
+                        throw VMException("Snapshot failed: ${e.message}, and resume also failed: ${resumeError.message}", e)
+                    }
+                }
+                throw e
+            }
+        }
+
+    /**
+     * List available snapshots for this VM.
+     *
+     * @param config Snapshot configuration
+     * @return List of snapshot names
+     */
+    fun listSnapshots(config: SnapshotConfiguration): List<String> = config.listSnapshots()
+
+    /**
+     * Clean up old snapshots based on retention policy.
+     *
+     * @param config Snapshot configuration with retention policy
+     * @return Result with list of cleaned up snapshot names
+     */
+    suspend fun cleanupSnapshots(config: SnapshotConfiguration): Result<List<String>> =
+        runCatching {
+            val toCleanup = config.applyRetentionPolicy()
+            toCleanup.forEach { snapshotName ->
+                val (snapshotPath, memoryPath) = config.getSnapshotPaths(snapshotName)
+
+                // Delete snapshot files
+                java.io.File(snapshotPath).delete()
+                java.io.File(memoryPath).delete()
+            }
+            toCleanup
+        }
+
+    /**
+     * Get snapshot information.
+     *
+     * @param config Snapshot configuration
+     * @param snapshotName Name of the snapshot
+     * @return Snapshot information if available
+     */
+    suspend fun getSnapshotInfo(
+        config: SnapshotConfiguration,
+        snapshotName: String,
+    ): Result<org.firecracker.sdk.snapshot.SnapshotInfo?> =
+        runCatching {
+            val (snapshotPath, memoryPath) = config.getSnapshotPaths(snapshotName)
+            val snapshotFile = java.io.File(snapshotPath)
+            val memoryFile = java.io.File(memoryPath)
+
+            if (!snapshotFile.exists() || !memoryFile.exists()) {
+                return@runCatching null
+            }
+
+            org.firecracker.sdk.snapshot.SnapshotInfo(
+                name = snapshotName,
+                vmId = name,
+                type = config.snapshotType,
+                createdAt =
+                    java.time.LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(snapshotFile.lastModified()),
+                        java.time.ZoneId.systemDefault(),
+                    ),
+                snapshotPath = snapshotPath,
+                memoryPath = memoryPath,
+                sizeBytes = snapshotFile.length() + memoryFile.length(),
+                metadata = config.metadata,
+            )
         }
 
     /**

@@ -13,6 +13,8 @@ import org.firecracker.sdk.models.NetworkInterface
 import org.firecracker.sdk.models.Operations
 import org.firecracker.sdk.models.RateLimiter
 import org.firecracker.sdk.models.VSock
+import org.firecracker.sdk.snapshot.SnapshotConfiguration
+import org.firecracker.sdk.snapshot.SnapshotStrategy
 
 /**
  * Main entry point for the Firecracker Kotlin/Java SDK.
@@ -322,6 +324,9 @@ class VMBuilder {
     // Balloon configuration
     var balloon: Balloon? = null
 
+    // Snapshot configuration
+    var snapshotConfig: SnapshotConfiguration? = null
+
     /**
      * Add a network interface to the VM configuration.
      */
@@ -564,6 +569,93 @@ class VMBuilder {
      */
     fun balloonWithOomProtection(amountMib: Int) {
         balloon = Balloon.withOomProtection(amountMib)
+    }
+
+    /**
+     * Configure snapshot management for the VM.
+     *
+     * @param strategy Snapshot strategy (development, production, backup, migration, testing)
+     * @param baseDir Optional override for base directory
+     */
+    fun snapshotStrategy(
+        strategy: SnapshotStrategy,
+        baseDir: String? = null,
+    ) {
+        snapshotConfig =
+            when (strategy) {
+                SnapshotStrategy.DEVELOPMENT -> SnapshotConfiguration.development(name, baseDir ?: "/tmp/dev-snapshots")
+                SnapshotStrategy.PRODUCTION -> SnapshotConfiguration.production(name, baseDir ?: "/opt/snapshots")
+                SnapshotStrategy.BACKUP -> SnapshotConfiguration.backup(name, baseDir ?: "/backup/snapshots")
+                SnapshotStrategy.MIGRATION -> SnapshotConfiguration.migration(name, baseDir ?: "/tmp/migration")
+                SnapshotStrategy.TESTING -> SnapshotConfiguration.testing(name, baseDir ?: "/tmp/test-snapshots")
+            }
+    }
+
+    /**
+     * Configure snapshots for development workflow.
+     *
+     * Optimized for frequent differential snapshots with aggressive cleanup.
+     *
+     * @param baseDir Base directory for snapshots (defaults to /tmp/dev-snapshots)
+     */
+    fun developmentSnapshots(baseDir: String = "/tmp/dev-snapshots") {
+        snapshotConfig = SnapshotConfiguration.development(name, baseDir)
+    }
+
+    /**
+     * Configure snapshots for production environment.
+     *
+     * Optimized for full snapshots with compression and longer retention.
+     *
+     * @param baseDir Base directory for snapshots (defaults to /opt/snapshots)
+     */
+    fun productionSnapshots(baseDir: String = "/opt/snapshots") {
+        snapshotConfig = SnapshotConfiguration.production(name, baseDir)
+    }
+
+    /**
+     * Configure snapshots for backup and disaster recovery.
+     *
+     * Optimized for long-term retention with compression.
+     *
+     * @param baseDir Base directory for snapshots (defaults to /backup/snapshots)
+     */
+    fun backupSnapshots(baseDir: String = "/backup/snapshots") {
+        snapshotConfig = SnapshotConfiguration.backup(name, baseDir)
+    }
+
+    /**
+     * Configure snapshots for VM migration.
+     *
+     * Optimized for cross-host migration with compression.
+     *
+     * @param baseDir Base directory for snapshots (defaults to /tmp/migration)
+     */
+    fun migrationSnapshots(baseDir: String = "/tmp/migration") {
+        snapshotConfig = SnapshotConfiguration.migration(name, baseDir)
+    }
+
+    /**
+     * Configure snapshots for testing.
+     *
+     * Optimized for quick snapshots with aggressive cleanup.
+     *
+     * @param baseDir Base directory for snapshots (defaults to /tmp/test-snapshots)
+     */
+    fun testingSnapshots(baseDir: String = "/tmp/test-snapshots") {
+        snapshotConfig = SnapshotConfiguration.testing(name, baseDir)
+    }
+
+    /**
+     * Configure advanced snapshot management with custom configuration.
+     *
+     * @param configure Function to configure snapshots with advanced options
+     */
+    fun advancedSnapshots(configure: SnapshotConfigurationBuilder.() -> Unit) {
+        val builder = SnapshotConfigurationBuilder()
+        builder.vmId = name
+        builder.configure()
+        snapshotConfig = builder.build()
     }
 
     /**
@@ -1056,6 +1148,98 @@ class MetricsConfigurationBuilder {
             enabledMetrics = enabledMetrics,
             aggregationWindow = aggregationWindow,
             exportFormat = exportFormat,
+        )
+    }
+}
+
+/**
+ * Builder for advanced snapshot configuration.
+ */
+class SnapshotConfigurationBuilder {
+    var vmId: String = ""
+    private var baseDirectory: String = "/tmp/snapshots"
+    private var snapshotType: org.firecracker.sdk.models.SnapshotType = org.firecracker.sdk.models.SnapshotType.Full
+    private var enableCompression: Boolean = false
+    private var retentionPolicy: org.firecracker.sdk.snapshot.RetentionPolicy = org.firecracker.sdk.snapshot.RetentionPolicy.default()
+    private var namingStrategy: org.firecracker.sdk.snapshot.NamingStrategy = org.firecracker.sdk.snapshot.NamingStrategy.Timestamp
+    private var metadata: Map<String, String> = emptyMap()
+
+    /**
+     * Set the base directory for snapshot files.
+     */
+    fun baseDirectory(directory: String) {
+        this.baseDirectory = directory
+    }
+
+    /**
+     * Set the default snapshot type.
+     */
+    fun snapshotType(type: org.firecracker.sdk.models.SnapshotType) {
+        this.snapshotType = type
+    }
+
+    /**
+     * Enable or disable compression for snapshot files.
+     */
+    fun enableCompression(enabled: Boolean = true) {
+        this.enableCompression = enabled
+    }
+
+    /**
+     * Set the retention policy for automatic cleanup.
+     */
+    fun retentionPolicy(policy: org.firecracker.sdk.snapshot.RetentionPolicy) {
+        this.retentionPolicy = policy
+    }
+
+    /**
+     * Set retention policy to keep only recent snapshots.
+     */
+    fun keepRecent(count: Int) {
+        this.retentionPolicy = org.firecracker.sdk.snapshot.RetentionPolicy.keepRecent(count)
+    }
+
+    /**
+     * Set retention policy to keep snapshots for specified days.
+     */
+    fun keepForDays(days: Int) {
+        this.retentionPolicy = org.firecracker.sdk.snapshot.RetentionPolicy.keepForDays(days)
+    }
+
+    /**
+     * Set the naming strategy for snapshot files.
+     */
+    fun namingStrategy(strategy: org.firecracker.sdk.snapshot.NamingStrategy) {
+        this.namingStrategy = strategy
+    }
+
+    /**
+     * Add metadata to be stored with snapshots.
+     */
+    fun metadata(
+        key: String,
+        value: String,
+    ) {
+        this.metadata = this.metadata + (key to value)
+    }
+
+    /**
+     * Add multiple metadata entries.
+     */
+    fun metadata(metadata: Map<String, String>) {
+        this.metadata = this.metadata + metadata
+    }
+
+    internal fun build(): SnapshotConfiguration {
+        require(vmId.isNotBlank()) { "VM ID is required for snapshot configuration" }
+        return SnapshotConfiguration(
+            baseDirectory = baseDirectory,
+            vmId = vmId,
+            snapshotType = snapshotType,
+            enableCompression = enableCompression,
+            retentionPolicy = retentionPolicy,
+            namingStrategy = namingStrategy,
+            metadata = metadata,
         )
     }
 }
