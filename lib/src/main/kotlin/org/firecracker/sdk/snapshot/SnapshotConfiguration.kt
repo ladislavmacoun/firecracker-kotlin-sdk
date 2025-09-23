@@ -180,7 +180,7 @@ data class SnapshotConfiguration(
         private const val BACKUP_RETENTION_DAYS = 90
         private const val TESTING_RETENTION_COUNT = 3
         private const val MIGRATION_RETENTION_COUNT = 1
-        
+
         /**
          * Create development snapshot configuration.
          *
@@ -329,7 +329,7 @@ data class RetentionPolicy(
 
     companion object {
         private const val DEFAULT_RETENTION_COUNT = 5
-        
+
         /** Default retention policy (keep 5 most recent snapshots) */
         fun default(): RetentionPolicy = RetentionPolicy(maxSnapshots = DEFAULT_RETENTION_COUNT)
 
