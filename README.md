@@ -138,7 +138,7 @@ The project uses git hooks to maintain code quality and consistent commit messag
 **Pre-commit Hook**: Automatically runs before each commit:
 
 - ktlint code formatting
-- detekt static analysis  
+- detekt static analysis
 - unit tests
 
 **Commit Message Hook**: Enforces [Conventional Commits](https://www.conventionalcommits.org/) format:
