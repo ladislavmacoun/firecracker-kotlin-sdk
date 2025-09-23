@@ -56,6 +56,8 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.jupiter.engine)
+
+    // Integration Test Dependencies
     testImplementation(libs.testcontainers)
 
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -99,6 +101,67 @@ tasks.named<Test>("test") {
 
     // Set system properties for tests
     systemProperty("firecracker.test.timeout", "30000")
+
+    // Exclude integration tests from unit test run
+    exclude("**/integration/**")
+}
+
+// Create integration test source set
+sourceSets {
+    create("integrationTest") {
+        kotlin {
+            srcDir("src/integrationTest/kotlin")
+        }
+        resources {
+            srcDir("src/integrationTest/resources")
+        }
+        compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
+        runtimeClasspath += sourceSets.main.get().output + sourceSets.test.get().output
+    }
+}
+
+// Add integration test dependencies
+configurations {
+    named("integrationTestImplementation") {
+        extendsFrom(configurations.testImplementation.get())
+    }
+    named("integrationTestRuntimeOnly") {
+        extendsFrom(configurations.testRuntimeOnly.get())
+    }
+}
+
+// Create integration test task
+tasks.register<Test>("integrationTest") {
+    group = "verification"
+    description = "Runs integration tests against real Firecracker processes"
+
+    useJUnitPlatform()
+    testClassesDirs = sourceSets["integrationTest"].output.classesDirs
+    classpath = sourceSets["integrationTest"].runtimeClasspath
+
+    // Integration tests require longer timeouts
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+
+    // Set system properties for integration tests
+    systemProperty("firecracker.integration.test", "true")
+    systemProperty("firecracker.test.timeout", "60000")
+
+    // Require Docker for integration tests
+    onlyIf {
+        try {
+            Runtime.getRuntime().exec("docker --version").waitFor() == 0
+        } catch (e: Exception) {
+            logger.warn("Docker not available, skipping integration tests")
+            false
+        }
+    }
+
+    // Integration tests should not run as part of normal build
+    shouldRunAfter(tasks.test)
 }
 
 // Configure Detekt
@@ -143,7 +206,7 @@ publishing {
 
                 developers {
                     developer {
-                        id.set("lada-macoun")
+                        id.set("ladislavmacoun")
                         name.set("Ladislav Macoun")
                         email.set("lada@macoun.dev")
                     }
