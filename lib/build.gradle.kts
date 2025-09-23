@@ -150,10 +150,16 @@ tasks.register<Test>("integrationTest") {
     systemProperty("firecracker.integration.test", "true")
     systemProperty("firecracker.test.timeout", "60000")
 
+    // Pass through real Firecracker testing property
+    systemProperty(
+        "firecracker.integration.real",
+        System.getProperty("firecracker.integration.real", "false"),
+    )
+
     // Require Docker for integration tests
     onlyIf {
         try {
-            Runtime.getRuntime().exec("docker --version").waitFor() == 0
+            ProcessBuilder("docker", "--version").start().waitFor() == 0
         } catch (e: Exception) {
             logger.warn("Docker not available, skipping integration tests")
             false

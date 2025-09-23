@@ -83,22 +83,21 @@ jobs:
           path: "**/build/reports/detekt/"
           retention-days: 30
 
-  integration-test:
+  integration-test-hypervisor:
+    name: Integration Tests (Hypervisor)
     runs-on: ubuntu-latest
-    needs: test
-    permissions:
-      contents: read
-      checks: write
-      pull-requests: write
-
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged
+    needs: [test]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -119,29 +118,37 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Format code (ensure consistent formatting)
-        run: ./gradlew ktlintFormat
+      - name: Install Firecracker
+        run: |
+          echo "Installing Firecracker..."
+          wget -q https://github.com/firecracker-microvm/firecracker/releases/download/v1.13.1/firecracker-v1.13.1-x86_64.tgz
+          tar -xzf firecracker-v1.13.1-x86_64.tgz
+          sudo cp release-v1.13.1-x86_64/firecracker-v1.13.1-x86_64 /usr/local/bin/firecracker
+          sudo chmod +x /usr/local/bin/firecracker
 
-      - name: Run integration tests
-        run: ./gradlew integrationTest
-        env:
-          # TestContainers configuration
-          TESTCONTAINERS_RYUK_DISABLED: true
+      - name: Verify KVM and Firecracker
+        run: |
+          echo "Checking KVM support..."
+          ls -la /dev/kvm
+          lscpu | grep Virtualization || echo "No virtualization info"
 
-      - name: Publish Integration Test Report
-        uses: mikepenz/action-junit-report@v4
-        if: success() || failure() # always run even if the previous step fails
-        with:
-          report_paths: "**/build/test-results/integrationTest/TEST-*.xml"
-          fail_on_failure: false
-          require_tests: false
-          check_name: "Integration Test Results"
+          echo "Checking Firecracker..."
+          firecracker --version
 
-      - name: Upload integration test results
+          echo "User and groups:"
+          id
+          groups
+
+      - name: Run integration tests with hypervisor
+        run: |
+          export HYPERVISOR_SUPPORT_ENABLED=true
+          ./gradlew integrationTest
+
+      - name: Upload hypervisor test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: integration-test-results
+          name: integration-test-hypervisor-results
           path: |
             **/build/reports/tests/integrationTest/
             **/build/test-results/integrationTest/
@@ -149,7 +156,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: [test, integration-test]
+    needs: [test, integration-test-hypervisor]
 
     steps:
       - name: Checkout code
