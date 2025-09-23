@@ -33,8 +33,17 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Format code (normalize line endings and fix style)
+        run: ./gradlew ktlintFormat
+
       - name: Run ktlint check
         run: ./gradlew ktlintCheck
+
+      - name: Show ktlint violations (if any)
+        if: failure()
+        run: |
+          echo "Ktlint found formatting violations:"
+          find . -name "ktlint*.txt" -exec cat {} \; || true
 
       - name: Run detekt
         run: ./gradlew detekt
@@ -99,6 +108,9 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
+
+      - name: Format code (ensure consistent formatting)
+        run: ./gradlew ktlintFormat
 
       - name: Run integration tests
         run: ./gradlew integrationTest
