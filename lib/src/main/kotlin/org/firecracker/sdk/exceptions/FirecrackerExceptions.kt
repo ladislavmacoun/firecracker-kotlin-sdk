@@ -322,14 +322,13 @@ sealed class SnapshotException(
  * Utility functions for error handling and recovery.
  */
 object ErrorHandling {
-    
     // HTTP status code constants
     private const val HTTP_SERVER_ERROR_START = 500
     private const val HTTP_SERVER_ERROR_END = 599
     private const val HTTP_TOO_MANY_REQUESTS = 429
     private const val HTTP_SERVICE_UNAVAILABLE = 503
     private const val HTTP_GATEWAY_TIMEOUT = 504
-    
+
     /**
      * Check if an exception is retryable.
      *
@@ -357,11 +356,13 @@ object ErrorHandling {
             is ClientError.NetworkTimeout -> true
             is ClientError.NetworkIO -> true
             is ResourceException.ResourceUnavailable -> true
-            is ApiException.HttpError -> exception.statusCode in listOf(
-                HTTP_TOO_MANY_REQUESTS,
-                HTTP_SERVICE_UNAVAILABLE,
-                HTTP_GATEWAY_TIMEOUT
-            )
+            is ApiException.HttpError ->
+                exception.statusCode in
+                    listOf(
+                        HTTP_TOO_MANY_REQUESTS,
+                        HTTP_SERVICE_UNAVAILABLE,
+                        HTTP_GATEWAY_TIMEOUT,
+                    )
             else -> false
         }
 

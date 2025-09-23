@@ -2,6 +2,8 @@ package org.firecracker.sdk
 
 import kotlinx.coroutines.delay
 import org.firecracker.sdk.client.FirecrackerClient
+import org.firecracker.sdk.logging.LoggingConfiguration
+import org.firecracker.sdk.metrics.MetricsConfiguration
 import org.firecracker.sdk.models.Balloon
 import org.firecracker.sdk.models.BalloonStatistics
 import org.firecracker.sdk.models.BalloonUpdate
@@ -414,6 +416,68 @@ class VirtualMachine internal constructor(
                     },
                 )
         }
+
+    /**
+     * Configure advanced logging with comprehensive options.
+     *
+     * @param config Advanced logging configuration with features like structured output,
+     *               component filtering, and preset configurations
+     * @return Result indicating success or failure
+     */
+    suspend fun configureAdvancedLogging(config: LoggingConfiguration): Result<Unit> = configureLogger(config.toLogger())
+
+    /**
+     * Configure logging using a preset configuration.
+     *
+     * @param preset Logging preset for common use cases (development, production, etc.)
+     * @param vmId Optional VM identifier for unique log files (defaults to VM name)
+     * @return Result indicating success or failure
+     */
+    suspend fun configureLoggingPreset(
+        preset: LoggingPreset,
+        vmId: String? = null,
+    ): Result<Unit> {
+        val config =
+            when (preset) {
+                LoggingPreset.DEVELOPMENT -> LoggingConfiguration.development(vmId = vmId ?: name)
+                LoggingPreset.PRODUCTION -> LoggingConfiguration.production(vmId = vmId ?: name)
+                LoggingPreset.MONITORING -> LoggingConfiguration.monitoring(vmId = vmId ?: name)
+                LoggingPreset.DEBUGGING -> LoggingConfiguration.debugging(vmId = vmId ?: name)
+                LoggingPreset.SECURITY -> LoggingConfiguration.security(vmId = vmId ?: name)
+            }
+        return configureAdvancedLogging(config)
+    }
+
+    /**
+     * Configure advanced metrics with comprehensive collection options.
+     *
+     * @param config Advanced metrics configuration with features like multiple formats,
+     *               collection intervals, and metric type filtering
+     * @return Result indicating success or failure
+     */
+    suspend fun configureAdvancedMetrics(config: MetricsConfiguration): Result<Unit> = configureMetrics(config.toMetrics())
+
+    /**
+     * Configure metrics using a preset configuration.
+     *
+     * @param preset Metrics preset for common use cases (development, production, etc.)
+     * @param vmId Optional VM identifier for unique metrics files (defaults to VM name)
+     * @return Result indicating success or failure
+     */
+    suspend fun configureMetricsPreset(
+        preset: MetricsPreset,
+        vmId: String? = null,
+    ): Result<Unit> {
+        val config =
+            when (preset) {
+                MetricsPreset.DEVELOPMENT -> MetricsConfiguration.development(vmId = vmId ?: name)
+                MetricsPreset.PRODUCTION -> MetricsConfiguration.production(vmId = vmId ?: name)
+                MetricsPreset.MONITORING -> MetricsConfiguration.monitoring(vmId = vmId ?: name)
+                MetricsPreset.PERFORMANCE -> MetricsConfiguration.performance(vmId = vmId ?: name)
+                MetricsPreset.MINIMAL -> MetricsConfiguration.minimal(vmId = vmId ?: name)
+            }
+        return configureAdvancedMetrics(config)
+    }
 
     /**
      * Create a snapshot of the current VM state.

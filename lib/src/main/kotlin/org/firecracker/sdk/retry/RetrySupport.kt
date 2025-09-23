@@ -104,9 +104,8 @@ interface RetryPolicy {
  * Default retry policy based on exception type and transient error detection.
  */
 object DefaultRetryPolicy : RetryPolicy {
-    
     private const val JITTER_CENTER = 0.5
-    
+
     override fun shouldRetry(
         exception: Throwable,
         attempt: Int,
@@ -180,19 +179,20 @@ object Retry {
 
         repeat(config.maxAttempts) { attempt ->
             val attemptNumber = attempt + 1
-            val result = runCatching { operation() }.getOrElse { exception ->
-                lastException = exception
-                return@repeat handleException(exception, attemptNumber, config, policy, delayFunc)
-            }
+            val result =
+                runCatching { operation() }.getOrElse { exception ->
+                    lastException = exception
+                    return@repeat handleException(exception, attemptNumber, config, policy, delayFunc)
+                }
 
             if (result.isSuccess) return result
 
             val exception = result.exceptionOrNull() ?: return result
             lastException = exception
-            
+
             if (!policy.shouldRetry(exception, attemptNumber, config)) return result
-            
-            runCatching { 
+
+            runCatching {
                 delayFunc(policy.calculateDelay(attemptNumber, config))
             }.getOrElse { return Result.failure(it) }
         }
@@ -210,19 +210,20 @@ object Retry {
 
         repeat(config.maxAttempts) { attempt ->
             val attemptNumber = attempt + 1
-            val result = runCatching { operation() }.getOrElse { exception ->
-                lastException = exception
-                return@repeat handleExceptionBlocking(exception, attemptNumber, config, policy, delayFunc)
-            }
+            val result =
+                runCatching { operation() }.getOrElse { exception ->
+                    lastException = exception
+                    return@repeat handleExceptionBlocking(exception, attemptNumber, config, policy, delayFunc)
+                }
 
             if (result.isSuccess) return result
 
             val exception = result.exceptionOrNull() ?: return result
             lastException = exception
-            
+
             if (!policy.shouldRetry(exception, attemptNumber, config)) return result
-            
-            runCatching { 
+
+            runCatching {
                 delayFunc(policy.calculateDelay(attemptNumber, config))
             }.getOrElse { return Result.failure(it) }
         }
@@ -238,7 +239,7 @@ object Retry {
         delayFunc: suspend (Duration) -> Unit,
     ) {
         if (policy.shouldRetry(exception, attemptNumber, config)) {
-            runCatching { 
+            runCatching {
                 delayFunc(policy.calculateDelay(attemptNumber, config))
             }
         }
@@ -252,7 +253,7 @@ object Retry {
         delayFunc: (Duration) -> Unit,
     ) {
         if (policy.shouldRetry(exception, attemptNumber, config)) {
-            runCatching { 
+            runCatching {
                 delayFunc(policy.calculateDelay(attemptNumber, config))
             }
         }

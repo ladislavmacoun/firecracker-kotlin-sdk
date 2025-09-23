@@ -1,5 +1,7 @@
 package org.firecracker.sdk
 
+import org.firecracker.sdk.logging.LoggingConfiguration
+import org.firecracker.sdk.metrics.MetricsConfiguration
 import org.firecracker.sdk.models.Balloon
 import org.firecracker.sdk.models.Bandwidth
 import org.firecracker.sdk.models.BootSource
@@ -385,6 +387,70 @@ class VMBuilder {
      */
     fun autoMetrics(baseDir: String = "/tmp") {
         metrics = Metrics.forVm(name, baseDir)
+    }
+
+    /**
+     * Configure advanced logging with preset configurations.
+     *
+     * @param preset Logging preset (development, production, monitoring, debugging, security)
+     * @param vmId Optional VM identifier for unique log files (defaults to VM name)
+     */
+    fun loggingPreset(
+        preset: LoggingPreset,
+        vmId: String? = null,
+    ) {
+        val config =
+            when (preset) {
+                LoggingPreset.DEVELOPMENT -> LoggingConfiguration.development(vmId = vmId ?: name)
+                LoggingPreset.PRODUCTION -> LoggingConfiguration.production(vmId = vmId ?: name)
+                LoggingPreset.MONITORING -> LoggingConfiguration.monitoring(vmId = vmId ?: name)
+                LoggingPreset.DEBUGGING -> LoggingConfiguration.debugging(vmId = vmId ?: name)
+                LoggingPreset.SECURITY -> LoggingConfiguration.security(vmId = vmId ?: name)
+            }
+        logger = config.toLogger()
+    }
+
+    /**
+     * Configure advanced logging with custom configuration.
+     *
+     * @param configure Function to configure logging with advanced options
+     */
+    fun advancedLogging(configure: LoggingConfigurationBuilder.() -> Unit) {
+        val builder = LoggingConfigurationBuilder()
+        builder.configure()
+        logger = builder.build().toLogger()
+    }
+
+    /**
+     * Configure advanced metrics with preset configurations.
+     *
+     * @param preset Metrics preset (development, production, monitoring, performance, minimal)
+     * @param vmId Optional VM identifier for unique metrics files (defaults to VM name)
+     */
+    fun metricsPreset(
+        preset: MetricsPreset,
+        vmId: String? = null,
+    ) {
+        val config =
+            when (preset) {
+                MetricsPreset.DEVELOPMENT -> MetricsConfiguration.development(vmId = vmId ?: name)
+                MetricsPreset.PRODUCTION -> MetricsConfiguration.production(vmId = vmId ?: name)
+                MetricsPreset.MONITORING -> MetricsConfiguration.monitoring(vmId = vmId ?: name)
+                MetricsPreset.PERFORMANCE -> MetricsConfiguration.performance(vmId = vmId ?: name)
+                MetricsPreset.MINIMAL -> MetricsConfiguration.minimal(vmId = vmId ?: name)
+            }
+        metrics = config.toMetrics()
+    }
+
+    /**
+     * Configure advanced metrics with custom configuration.
+     *
+     * @param configure Function to configure metrics with advanced options
+     */
+    fun advancedMetrics(configure: MetricsConfigurationBuilder.() -> Unit) {
+        val builder = MetricsConfigurationBuilder()
+        builder.configure()
+        metrics = builder.build().toMetrics()
     }
 
     /**
@@ -805,6 +871,191 @@ class DriveRateLimiterBuilder {
         return org.firecracker.sdk.models.DriveRateLimiter(
             bandwidth = bandwidth,
             ops = ops,
+        )
+    }
+}
+
+/**
+ * Preset logging configurations for common use cases.
+ */
+enum class LoggingPreset {
+    /** Development logging with debug level and verbose output */
+    DEVELOPMENT,
+
+    /** Production logging optimized for performance */
+    PRODUCTION,
+
+    /** Monitoring-focused logging for observability */
+    MONITORING,
+
+    /** Debugging logging with trace level and detailed output */
+    DEBUGGING,
+
+    /** Security-focused logging for audit trails */
+    SECURITY,
+}
+
+/**
+ * Preset metrics configurations for common use cases.
+ */
+enum class MetricsPreset {
+    /** Development metrics with comprehensive collection */
+    DEVELOPMENT,
+
+    /** Production metrics optimized for performance */
+    PRODUCTION,
+
+    /** Monitoring-focused metrics collection */
+    MONITORING,
+
+    /** Performance analysis metrics with high frequency */
+    PERFORMANCE,
+
+    /** Minimal metrics for resource-constrained environments */
+    MINIMAL,
+}
+
+/**
+ * Builder for advanced logging configuration.
+ */
+class LoggingConfigurationBuilder {
+    private var logPath: String = "/tmp/firecracker.log"
+    private var level: org.firecracker.sdk.models.LogLevel = org.firecracker.sdk.models.LogLevel.Info
+    private var showLevel: Boolean = true
+    private var showLogOrigin: Boolean = false
+    private var structured: Boolean = false
+    private var componentFilter: Set<String> = emptySet()
+    private var excludeFilter: Set<String> = emptySet()
+
+    /**
+     * Set the log file path.
+     */
+    fun logPath(path: String) {
+        this.logPath = path
+    }
+
+    /**
+     * Set the logging level.
+     */
+    fun level(level: org.firecracker.sdk.models.LogLevel) {
+        this.level = level
+    }
+
+    /**
+     * Configure whether to show log levels in output.
+     */
+    fun showLevel(show: Boolean = true) {
+        this.showLevel = show
+    }
+
+    /**
+     * Configure whether to show log origin information.
+     */
+    fun showLogOrigin(show: Boolean = true) {
+        this.showLogOrigin = show
+    }
+
+    /**
+     * Enable structured logging output.
+     */
+    fun structured(enabled: Boolean = true) {
+        this.structured = enabled
+    }
+
+    /**
+     * Filter logs to include only specific components.
+     */
+    fun componentFilter(vararg components: String) {
+        this.componentFilter = components.toSet()
+    }
+
+    /**
+     * Filter logs to exclude specific components.
+     */
+    fun excludeFilter(vararg components: String) {
+        this.excludeFilter = components.toSet()
+    }
+
+    internal fun build(): LoggingConfiguration {
+        return LoggingConfiguration(
+            logPath = logPath,
+            level = level,
+            showLevel = showLevel,
+            showLogOrigin = showLogOrigin,
+            structured = structured,
+            componentFilter = componentFilter,
+            excludeFilter = excludeFilter,
+        )
+    }
+}
+
+/**
+ * Builder for advanced metrics configuration.
+ */
+class MetricsConfigurationBuilder {
+    companion object {
+        private const val DEFAULT_COLLECTION_INTERVAL = 1000L
+        private const val DEFAULT_RETENTION_PERIOD = 3600000L
+        private const val DEFAULT_AGGREGATION_WINDOW = 60000L
+    }
+
+    private var metricsPath: String = "/tmp/firecracker-metrics.json"
+    private var collectionInterval: Long = DEFAULT_COLLECTION_INTERVAL
+    private var retentionPeriod: Long = DEFAULT_RETENTION_PERIOD
+    private var enabledMetrics: Set<org.firecracker.sdk.metrics.MetricType> = org.firecracker.sdk.metrics.MetricType.entries.toSet()
+    private var aggregationWindow: Long = DEFAULT_AGGREGATION_WINDOW
+    private var exportFormat: org.firecracker.sdk.metrics.MetricsFormat = org.firecracker.sdk.metrics.MetricsFormat.JSON
+
+    /**
+     * Set the metrics file path.
+     */
+    fun metricsPath(path: String) {
+        this.metricsPath = path
+    }
+
+    /**
+     * Set the collection interval in milliseconds.
+     */
+    fun collectionInterval(interval: Long) {
+        this.collectionInterval = interval
+    }
+
+    /**
+     * Set the retention period in milliseconds.
+     */
+    fun retentionPeriod(period: Long) {
+        this.retentionPeriod = period
+    }
+
+    /**
+     * Configure which metrics to collect.
+     */
+    fun enabledMetrics(vararg metrics: org.firecracker.sdk.metrics.MetricType) {
+        this.enabledMetrics = metrics.toSet()
+    }
+
+    /**
+     * Set the aggregation window in milliseconds.
+     */
+    fun aggregationWindow(window: Long) {
+        this.aggregationWindow = window
+    }
+
+    /**
+     * Set the export format for metrics.
+     */
+    fun exportFormat(format: org.firecracker.sdk.metrics.MetricsFormat) {
+        this.exportFormat = format
+    }
+
+    internal fun build(): MetricsConfiguration {
+        return MetricsConfiguration(
+            metricsPath = metricsPath,
+            collectionInterval = collectionInterval,
+            retentionPeriod = retentionPeriod,
+            enabledMetrics = enabledMetrics,
+            aggregationWindow = aggregationWindow,
+            exportFormat = exportFormat,
         )
     }
 }

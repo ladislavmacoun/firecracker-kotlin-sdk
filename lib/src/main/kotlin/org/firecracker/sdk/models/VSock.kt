@@ -1,12 +1,3 @@
-/*
- * Firecracker Kotlin SDK
- *
- * A Kotlin-first SDK for interacting with Firecracker microVMs,
- * with full Java interoperability.
- *
- * Author: Ladislav Macoun <lada@macoun.dev>
- */
-
 package org.firecracker.sdk.models
 
 import kotlinx.serialization.SerialName

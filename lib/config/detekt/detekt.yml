@@ -140,7 +140,8 @@ style:
   ReturnCount:
     active: true
     max: 2
-    excludedFunctions: ["equals", "executeWithRetry", "executeWithRetryBlocking"]
+    excludedFunctions:
+      ["equals", "executeWithRetry", "executeWithRetryBlocking"]
     excludeReturnFromLambda: true
   UnusedPrivateMember:
     active: true
