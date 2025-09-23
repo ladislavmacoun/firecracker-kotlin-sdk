@@ -1,5 +1,6 @@
 package org.firecracker.sdk
 
+import org.firecracker.sdk.models.Balloon
 import org.firecracker.sdk.models.Bandwidth
 import org.firecracker.sdk.models.BootSource
 import org.firecracker.sdk.models.Drive
@@ -12,33 +13,265 @@ import org.firecracker.sdk.models.RateLimiter
 import org.firecracker.sdk.models.VSock
 
 /**
- * Main entry point for the Firecracker SDK.
+ * Main entry point for the Firecracker Kotlin/Java SDK.
  *
- * Provides a clean, high-level API for managing Firecracker microVMs
- * without exposing low-level implementation details.
+ * Provides a comprehensive, type-safe API for creating and managing Firecracker microVMs
+ * with minimal boilerplate and maximum ergonomics. Built with Kotlin-first design principles
+ * while maintaining full Java interoperability.
+ *
+ * ## Key Features
+ *
+ * **Type-Safe VM Creation**: Fluent DSL builder pattern with compile-time validation
+ * - Comprehensive device configuration (drives, network, balloon, VSock)
+ * - Built-in validation and sensible defaults
+ * - Zero-copy serialization with kotlinx.serialization
+ *
+ * **Async/Await Support**: Native Kotlin coroutines integration
+ * - Non-blocking VM operations with structured concurrency
+ * - Functional error handling with Result<T> types
+ * - Cancellation support for long-running operations
+ *
+ * **Production Ready**: Enterprise-grade reliability and observability
+ * - Comprehensive logging and metrics collection
+ * - Connection pooling and retry mechanisms
+ * - Memory-efficient resource management
+ *
+ * ## Quick Start
+ *
+ * ### Basic VM Creation
+ * ```kotlin
+ * val vm = Firecracker.createVM {
+ *     name = "web-server"
+ *     vcpus = 2
+ *     memory = 1024
+ *     kernel = "/path/to/vmlinux"
+ *     rootDrive("/path/to/rootfs.ext4")
+ * }
+ *
+ * vm.start().getOrThrow()
+ * ```
+ *
+ * ### Advanced Configuration
+ * ```kotlin
+ * val vm = Firecracker.createVM {
+ *     name = "microservice"
+ *     vcpus = 4
+ *     memory = 2048
+ *     kernel = "/boot/vmlinux-microvm"
+ *
+ *     // Boot configuration
+ *     bootArgs = "console=ttyS0 root=/dev/vda1 rw"
+ *     initrd = "/boot/initrd.img"
+ *
+ *     // Storage
+ *     rootDrive("/data/rootfs.ext4", isReadOnly = false)
+ *     addDrive {
+ *         driveId = "data"
+ *         pathOnHost = "/data/app-data.ext4"
+ *         isRootDevice = false
+ *
+ *         // Rate limiting
+ *         rateLimiter {
+ *             bandwidth { size = 10_000_000; refillTime = 100 }
+ *             ops { size = 1000; refillTime = 100 }
+ *         }
+ *     }
+ *
+ *     // Networking with rate limiting
+ *     addNetworkInterface {
+ *         interfaceId = "eth0"
+ *         hostDeviceName = "tap0"
+ *         guestMacAddress = "AA:BB:CC:DD:EE:FF"
+ *
+ *         rxRateLimit {
+ *             bandwidth { size = 100_000_000; refillTime = 100 }
+ *         }
+ *     }
+ *
+ *     // Memory management
+ *     overcommitBalloon(512) // Start with 512MB balloon for overcommit
+ *
+ *     // Host-guest communication
+ *     autoVSock(guestCid = 42u)
+ *
+ *     // Observability
+ *     debugLogging("/var/log/firecracker.log")
+ *     autoMetrics("/var/metrics")
+ * }
+ * ```
+ *
+ * ### Java Interoperability
+ * ```java
+ * VirtualMachine vm = Firecracker.createVM(builder -> {
+ *     builder.setName("java-vm");
+ *     builder.setVcpus(2);
+ *     builder.setMemory(1024);
+ *     builder.setKernel("/path/to/kernel");
+ *     builder.rootDrive("/path/to/rootfs.ext4");
+ * });
+ *
+ * vm.start()
+ *   .onSuccess(result -> System.out.println("Started!"))
+ *   .onFailure(error -> System.err.println("Failed: " + error));
+ * ```
+ *
+ * ## Best Practices
+ *
+ * **Resource Management**: Always clean up resources to prevent leaks
+ * ```kotlin
+ * vm.use {
+ *     it.start().getOrThrow()
+ *     // VM operations...
+ * } // Automatically closed
+ * ```
+ *
+ * **Error Handling**: Use Result<T> for functional error handling
+ * ```kotlin
+ * vm.start()
+ *     .onSuccess { println("VM started successfully") }
+ *     .onFailure { error ->
+ *         when (error) {
+ *             is ClientError.ConnectionFailed -> retry()
+ *             is ClientError.InvalidState -> recreateVM()
+ *             else -> logError(error)
+ *         }
+ *     }
+ * ```
+ *
+ * **Memory Management**: Monitor and adjust balloon device dynamically
+ * ```kotlin
+ * val stats = vm.getBalloonStatistics().getOrNull()
+ * if (stats?.memoryPressure ?: 0.0 > 80.0) {
+ *     vm.deflateBalloon(stats.targetMib - 128) // Release 128MB
+ * }
+ * ```
+ *
+ * @see VirtualMachine Core VM lifecycle management
+ * @see VMBuilder Fluent configuration builder
+ * @see <a href="https://firecracker-microvm.github.io/">Firecracker Project</a>
+ * @since 1.0.0
+ * @author Firecracker Kotlin SDK Team
  */
 object Firecracker {
     /**
-     * Create a new VM builder with sensible defaults.
+     * Create a new virtual machine using the fluent configuration DSL.
      *
-     * Example usage:
+     * Provides a type-safe, ergonomic way to configure Firecracker VMs with comprehensive
+     * validation and sensible defaults. The builder pattern ensures all required
+     * configuration is provided while making optional settings discoverable through IDE.
+     *
+     * ## Configuration Categories
+     *
+     * **Core Settings**: CPU, memory, and basic VM parameters
+     * **Boot Configuration**: Kernel, initrd, and boot arguments
+     * **Storage**: Root and additional block devices with rate limiting
+     * **Networking**: Interface configuration with bandwidth controls
+     * **Memory Management**: Balloon device for dynamic memory allocation
+     * **Communication**: VSock devices for host-guest interaction
+     * **Observability**: Logging, metrics, and debugging options
+     *
+     * ## Example Configurations
+     *
+     * **Minimal Setup**:
      * ```kotlin
      * val vm = Firecracker.createVM {
-     *     name = "my-vm"
+     *     name = "simple-vm"
+     *     kernel = "/boot/vmlinux"
+     *     rootDrive("/data/rootfs.ext4")
+     * }
+     * ```
+     *
+     * **Development Environment**:
+     * ```kotlin
+     * val vm = Firecracker.createVM {
+     *     name = "dev-env"
+     *     vcpus = 4
+     *     memory = 4096
+     *     kernel = "/boot/vmlinux-dev"
+     *     bootArgs = "console=ttyS0 root=/dev/vda1 rw debug"
+     *
+     *     rootDrive("/data/dev-rootfs.ext4")
+     *     addDrive {
+     *         driveId = "home"
+     *         pathOnHost = "/data/home.ext4"
+     *     }
+     *
+     *     // Network with debugging
+     *     addNetworkInterface {
+     *         interfaceId = "eth0"
+     *         hostDeviceName = "tap-dev"
+     *     }
+     *
+     *     debugLogging("/var/log/vm-dev.log")
+     *     balloonWithStats(1024, pollingIntervalS = 1)
+     * }
+     * ```
+     *
+     * **Production Microservice**:
+     * ```kotlin
+     * val vm = Firecracker.createVM {
+     *     name = "payment-service"
      *     vcpus = 2
      *     memory = 1024
-     *     kernel = "/path/to/kernel"
-     *     rootfs = "/path/to/rootfs"
+     *     enableSmt = false // Security: disable hyperthreading
+     *
+     *     kernel = "/boot/vmlinux-prod"
+     *     bootArgs = "console=ttyS0 root=/dev/vda1 ro quiet"
+     *
+     *     rootDrive("/images/payment-service.ext4", isReadOnly = true)
      *
      *     addNetworkInterface {
      *         interfaceId = "eth0"
-     *         hostDeviceName = "tap0"
-     *         guestMacAddress = "AA:BB:CC:DD:EE:FF"
-     *     }
-     * }
+     *         hostDeviceName = "tap-payment"
+     *         guestMacAddress = "AA:BB:CC:DD:EE:01"
      *
-     * vm.start()
+     *         // Production rate limits
+     *         rxRateLimit {
+     *             bandwidth {
+     *                 size = 50_000_000 // 50 Mbps
+     *                 refillTime = 100
+     *             }
+     *         }
+     *         txRateLimit {
+     *             ops {
+     *                 size = 5000 // 5K packets/sec
+     *                 refillTime = 100
+     *             }
+     *         }
+     *     }
+     *
+     *     // Memory overcommit for cost efficiency
+     *     forOvercommitBalloon(256)
+     *
+     *     // Production monitoring
+     *     autoMetrics("/metrics")
+     *     logging("/var/log/payment-service.log", LogLevel.Info)
+     * }
      * ```
+     *
+     * ## Validation and Defaults
+     *
+     * The builder performs comprehensive validation:
+     * - **Required fields**: Kernel path must be specified
+     * - **Resource limits**: vCPU count (1-32), memory size validation
+     * - **Path validation**: File paths must be accessible to Firecracker
+     * - **Network validation**: MAC address format, interface naming
+     * - **Device limits**: Maximum drive/interface counts per VM
+     *
+     * Default values are applied for optional settings:
+     * - vCPUs: 1, Memory: 128 MiB
+     * - SMT: disabled, Dirty page tracking: disabled
+     * - Socket path: auto-generated in /tmp
+     * - Device caching: enabled for performance
+     *
+     * @param configure Lambda function to configure the VM using the builder DSL
+     * @return Configured VirtualMachine instance ready for lifecycle operations
+     * @throws IllegalArgumentException if required configuration is missing or invalid
+     * @throws IllegalStateException if builder configuration conflicts detected
+     * @see VMBuilder Available configuration options
+     * @see VirtualMachine.start Starting the configured VM
+     * @sample org.firecracker.sdk.samples.FirecrackerSamples.basicVMCreation
+     * @since 1.0.0
      */
     fun createVM(configure: VMBuilder.() -> Unit): VirtualMachine {
         val builder = VMBuilder()
@@ -83,6 +316,9 @@ class VMBuilder {
 
     // VSock configuration
     var vsock: VSock? = null
+
+    // Balloon configuration
+    var balloon: Balloon? = null
 
     /**
      * Add a network interface to the VM configuration.
@@ -192,6 +428,76 @@ class VMBuilder {
         baseDir: String = "/tmp",
     ) {
         vsock = VSock.withSocketName(guestCid, socketName, baseDir)
+    }
+
+    /**
+     * Configure memory balloon device for dynamic memory management.
+     *
+     * The balloon device enables the host to reclaim and return guest memory
+     * through API commands, supporting memory overcommit scenarios.
+     *
+     * @param amountMib Initial balloon target size in MiB
+     * @param deflateOnOom Enable automatic deflation during guest OOM conditions
+     * @param statsPollingIntervalS Statistics collection interval in seconds (0 disables)
+     */
+    fun balloon(
+        amountMib: Int,
+        deflateOnOom: Boolean = false,
+        statsPollingIntervalS: Int = 0,
+    ) {
+        balloon = Balloon.withFullConfig(amountMib, deflateOnOom, statsPollingIntervalS)
+    }
+
+    /**
+     * Configure memory balloon with basic settings.
+     *
+     * Creates a balloon device with specified target size and default settings
+     * (no OOM protection, no statistics collection).
+     *
+     * @param amountMib Balloon target size in MiB
+     */
+    fun simpleBalloon(amountMib: Int) {
+        balloon = Balloon.create(amountMib)
+    }
+
+    /**
+     * Configure memory balloon optimized for overcommit scenarios.
+     *
+     * Creates a balloon with OOM protection enabled and frequent statistics
+     * collection, suitable for environments with limited host memory.
+     *
+     * @param amountMib Initial balloon target size in MiB
+     */
+    fun overcommitBalloon(amountMib: Int) {
+        balloon = Balloon.forOvercommit(amountMib)
+    }
+
+    /**
+     * Configure memory balloon with statistics collection enabled.
+     *
+     * Enables detailed memory usage monitoring through periodic statistics
+     * collection from the guest balloon driver.
+     *
+     * @param amountMib Balloon target size in MiB
+     * @param pollingIntervalS Statistics polling interval in seconds
+     */
+    fun balloonWithStats(
+        amountMib: Int,
+        pollingIntervalS: Int,
+    ) {
+        balloon = Balloon.withStatistics(amountMib, pollingIntervalS)
+    }
+
+    /**
+     * Configure memory balloon with OOM protection only.
+     *
+     * Enables automatic balloon deflation during guest out-of-memory
+     * conditions to help maintain guest stability.
+     *
+     * @param amountMib Balloon target size in MiB
+     */
+    fun balloonWithOomProtection(amountMib: Int) {
+        balloon = Balloon.withOomProtection(amountMib)
     }
 
     /**

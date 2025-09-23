@@ -2,6 +2,9 @@ package org.firecracker.sdk
 
 import kotlinx.coroutines.delay
 import org.firecracker.sdk.client.FirecrackerClient
+import org.firecracker.sdk.models.Balloon
+import org.firecracker.sdk.models.BalloonStatistics
+import org.firecracker.sdk.models.BalloonUpdate
 import org.firecracker.sdk.models.BootSource
 import org.firecracker.sdk.models.Drive
 import org.firecracker.sdk.models.Logger
@@ -13,10 +16,110 @@ import org.firecracker.sdk.models.SnapshotLoadParams
 import org.firecracker.sdk.models.VSock
 
 /**
- * Represents a Firecracker virtual machine with high-level lifecycle management.
+ * Represents a Firecracker virtual machine with comprehensive lifecycle management.
  *
- * This class encapsulates all the complexity of managing a Firecracker VM,
- * providing a clean, ergonomic API that follows domain-driven design principles.
+ * This class encapsulates the complete functionality for managing Firecracker microVMs,
+ * providing a high-level, type-safe API that abstracts the underlying complexity of
+ * the Firecracker REST API. Built on domain-driven design principles with focus on
+ * ergonomics, safety, and performance.
+ *
+ * ## Core Features
+ *
+ * **Lifecycle Management**: Complete VM state transitions from creation to termination
+ * - Start, pause, resume, stop operations with proper state validation
+ * - Graceful shutdown handling and resource cleanup
+ * - Asynchronous operations with Kotlin coroutines support
+ *
+ * **Device Configuration**: Comprehensive device management capabilities
+ * - Block devices (drives) with rate limiting and caching options
+ * - Network interfaces with bandwidth controls and static IP configuration
+ * - Memory balloon device for dynamic memory management
+ * - VSock devices for secure host-guest communication
+ *
+ * **Observability & Monitoring**: Built-in monitoring and debugging tools
+ * - Logging configuration with multiple verbosity levels
+ * - Metrics collection and export capabilities
+ * - VM state inspection and health monitoring
+ *
+ * **Snapshot Support**: Complete VM state persistence and restoration
+ * - Full and differential snapshot creation
+ * - Hot snapshot operations during VM runtime
+ * - Cross-host VM migration through snapshot restoration
+ *
+ * ## Usage Examples
+ *
+ * ```kotlin
+ * // Create and start a basic VM
+ * val vm = Firecracker.createVM {
+ *     name = "web-server"
+ *     vcpus = 2
+ *     memory = 1024
+ *     kernel = "/path/to/vmlinux"
+ *     rootDrive("/path/to/rootfs.ext4")
+ *
+ *     // Network configuration
+ *     addNetworkInterface {
+ *         interfaceId = "eth0"
+ *         hostDeviceName = "tap0"
+ *         guestMacAddress = "AA:BB:CC:DD:EE:FF"
+ *     }
+ *
+ *     // Memory management
+ *     simpleBalloon(512) // Start with 512MB balloon
+ * }
+ *
+ * // Start VM and handle results
+ * vm.start()
+ *     .onSuccess { println("VM started successfully") }
+ *     .onFailure { error -> logger.error("Failed to start VM", error) }
+ *
+ * // Runtime memory management
+ * vm.inflateBalloon(768) // Reclaim 256MB more memory
+ * val stats = vm.getBalloonStatistics().getOrNull()
+ * println("Memory efficiency: ${stats?.efficiency}%")
+ *
+ * // Snapshot for backup/migration
+ * vm.createSnapshot(SnapshotCreateParams.full("/backup/snapshot.json", "/backup/memory.bin"))
+ *     .onSuccess { println("Snapshot created") }
+ * ```
+ *
+ * ## Error Handling
+ *
+ * All operations return `Result<T>` for functional error handling without exceptions.
+ * Common error scenarios include:
+ * - Invalid state transitions (e.g., starting an already running VM)
+ * - Resource conflicts (e.g., socket path already in use)
+ * - Configuration validation failures
+ * - Firecracker process communication errors
+ *
+ * ## Thread Safety
+ *
+ * This class is **not thread-safe**. While individual operations are atomic through
+ * the underlying HTTP client, concurrent modifications to VM state can lead to
+ * race conditions. Use external synchronization when accessing from multiple threads.
+ *
+ * ## Resource Management
+ *
+ * Virtual machines hold system resources including:
+ * - Unix domain socket connections
+ * - File descriptors for drives and devices
+ * - Memory allocations for VM state
+ *
+ * Always call [close] when finished to ensure proper cleanup, or use within
+ * try-with-resources pattern for automatic resource management.
+ *
+ * @param name Human-readable identifier for the VM instance
+ * @param socketPath Unix domain socket path for Firecracker API communication
+ * @param configuration CPU and memory settings for the virtual machine
+ * @param bootSource Kernel and boot configuration including initrd and boot arguments
+ * @param drives List of block devices attached to the VM (root and data drives)
+ * @param networkInterfaces List of network interfaces for VM connectivity
+ *
+ * @see Firecracker Main SDK entry point for VM creation
+ * @see FirecrackerClient Low-level HTTP API client
+ * @see <a href="https://firecracker-microvm.github.io/">Firecracker Documentation</a>
+ * @since 1.0.0
+ * @author Firecracker Kotlin SDK Team
  */
 @Suppress("TooManyFunctions") // VM lifecycle management legitimately requires many operations
 class VirtualMachine internal constructor(
@@ -30,14 +133,80 @@ class VirtualMachine internal constructor(
     private val client by lazy { FirecrackerClient(socketPath) }
 
     /**
-     * Current state of the virtual machine.
+     * Represents the current operational state of the virtual machine.
+     *
+     * State transitions follow a well-defined lifecycle that ensures consistent
+     * VM behavior and prevents invalid operations. The state machine enforces
+     * proper sequencing of VM operations and provides clear error reporting
+     * for invalid transitions.
+     *
+     * ## State Transition Diagram
+     * ```
+     * NOT_STARTED → STARTING → RUNNING → STOPPING → STOPPED
+     *      ↓           ↓          ↓         ↓         ↓
+     *    ERROR ←----- ERROR ←--- ERROR ←-- ERROR ← ERROR
+     * ```
+     *
+     * ## Valid Transitions
+     * - `NOT_STARTED` → `STARTING`: Initial VM boot sequence begins
+     * - `STARTING` → `RUNNING`: VM has successfully booted and is operational
+     * - `RUNNING` → `STOPPING`: Graceful shutdown initiated
+     * - `STOPPING` → `STOPPED`: VM has fully shut down
+     * - Any State → `ERROR`: Unrecoverable error occurred
+     *
+     * @see VirtualMachine.start Start VM operation
+     * @see VirtualMachine.stop Stop VM operation
+     * @see VirtualMachine.state Current state property
+     * @since 1.0.0
      */
     enum class State {
+        /**
+         * VM is created but not yet started.
+         *
+         * Initial state after VM creation. Configuration can still be modified
+         * and devices can be attached. The start() operation is available.
+         */
         NOT_STARTED,
+
+        /**
+         * VM boot process is in progress.
+         *
+         * Transitional state during VM initialization. The Firecracker process
+         * is loading the kernel and setting up devices. Most operations are
+         * unavailable during this state.
+         */
         STARTING,
+
+        /**
+         * VM is fully operational and running guest code.
+         *
+         * Normal operational state where the guest OS is active and can execute
+         * workloads. All runtime operations (pause, resume, snapshot) are available.
+         */
         RUNNING,
+
+        /**
+         * VM shutdown process is in progress.
+         *
+         * Transitional state during graceful shutdown. The guest OS is terminating
+         * processes and unmounting filesystems. New operations are not accepted.
+         */
         STOPPING,
+
+        /**
+         * VM has completely stopped and released all resources.
+         *
+         * Final state after successful shutdown. VM resources are cleaned up
+         * and the instance cannot be restarted. A new VM must be created.
+         */
         STOPPED,
+
+        /**
+         * VM encountered an unrecoverable error.
+         *
+         * Error state indicating VM failure during any operation. The VM
+         * may need to be destroyed and recreated. Check logs for error details.
+         */
         ERROR,
     }
 
@@ -371,6 +540,115 @@ class VirtualMachine internal constructor(
             client.patch("/vsock", mapOf("guest_cid" to 0))
                 .onFailure { throw it }
         }
+
+    /**
+     * Configure memory balloon device for dynamic memory management.
+     *
+     * The balloon device allows the host to reclaim and return guest memory
+     * through API commands. This enables memory overcommit scenarios and
+     * dynamic memory allocation based on workload demands.
+     *
+     * Note: The balloon device must be configured before starting the VM.
+     * Once the VM is running, only the target size and polling interval
+     * can be modified through updateBalloon().
+     *
+     * @param balloon Balloon device configuration including target size,
+     *                OOM protection settings, and statistics collection
+     * @return Result indicating success or failure of configuration
+     * @throws IllegalStateException if VM is already running
+     */
+    suspend fun configureBalloon(balloon: Balloon): Result<Unit> =
+        runCatching {
+            client.put("/balloon", balloon)
+                .onFailure { throw it }
+        }
+
+    /**
+     * Get current balloon device configuration and operational status.
+     *
+     * Returns the current balloon configuration including target size,
+     * OOM protection settings, and statistics collection interval.
+     * This provides the configuration perspective of the balloon device.
+     *
+     * @return Current balloon configuration or null if not configured
+     */
+    suspend fun getBalloon(): Result<Balloon?> =
+        runCatching {
+            client.get<Balloon>("/balloon")
+                .fold(
+                    onSuccess = { it },
+                    onFailure = { null },
+                )
+        }
+
+    /**
+     * Update balloon device configuration during runtime.
+     *
+     * Allows modification of balloon target size and statistics polling
+     * interval while the VM is running. This is the primary method for
+     * dynamic memory management operations.
+     *
+     * Common use cases:
+     * - Increasing balloon size to reclaim guest memory
+     * - Decreasing balloon size to provide more memory to guest
+     * - Adjusting statistics collection frequency for monitoring
+     *
+     * @param update Balloon update specifying new target size and/or polling interval
+     * @return Result indicating success or failure of update operation
+     */
+    suspend fun updateBalloon(update: BalloonUpdate): Result<Unit> =
+        runCatching {
+            client.patch("/balloon", update)
+                .onFailure { throw it }
+        }
+
+    /**
+     * Get detailed balloon statistics and operational metrics.
+     *
+     * Provides comprehensive insights into balloon operation including:
+     * - Target vs actual balloon sizes (pages and MiB)
+     * - Guest memory statistics (swap, page faults, free memory)
+     * - Memory pressure indicators and availability metrics
+     * - Hugetlb allocation statistics
+     *
+     * Statistics are only available if the balloon was configured with
+     * a non-zero statsPollingIntervalS value. The data reflects the
+     * guest's perspective and should be considered indicative rather
+     * than authoritative due to potential guest driver issues.
+     *
+     * @return Current balloon statistics or error if statistics disabled
+     * @throws IllegalStateException if balloon not configured or statistics disabled
+     */
+    suspend fun getBalloonStatistics(): Result<BalloonStatistics> =
+        runCatching {
+            client.get<BalloonStatistics>("/balloon/statistics")
+                .getOrThrow()
+        }
+
+    /**
+     * Convenience method to inflate balloon to reclaim guest memory.
+     *
+     * Increases the balloon target size to the specified amount, effectively
+     * reducing the amount of memory available to guest processes. This is
+     * useful for memory overcommit scenarios where host memory needs to be
+     * reclaimed from guests.
+     *
+     * @param targetMib New balloon target size in MiB
+     * @return Result indicating success or failure of inflation
+     */
+    suspend fun inflateBalloon(targetMib: Int): Result<Unit> = updateBalloon(BalloonUpdate.targetSize(targetMib))
+
+    /**
+     * Convenience method to deflate balloon to provide more memory to guest.
+     *
+     * Decreases the balloon target size to the specified amount, effectively
+     * increasing the amount of memory available to guest processes. Use this
+     * when guest workloads require additional memory resources.
+     *
+     * @param targetMib New balloon target size in MiB (must be smaller than current)
+     * @return Result indicating success or failure of deflation
+     */
+    suspend fun deflateBalloon(targetMib: Int): Result<Unit> = updateBalloon(BalloonUpdate.targetSize(targetMib))
 
     /**
      * Get detailed information about the VM.
