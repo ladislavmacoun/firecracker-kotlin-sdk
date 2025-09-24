@@ -24,16 +24,17 @@ A Kotlin-first SDK for interacting with [Firecracker microVMs](https://firecrack
 import org.firecracker.sdk.*
 
 // Create a VM using the DSL builder
-val vm = Firecracker.build {
-    kernelPath = "/path/to/vmlinux"
-    machineConfig {
-        vcpuCount = 2
-        memSizeMib = 512
-    }
+val vm = Firecracker.createVM {
+    name = "kotlin-vm"
+    kernel = "/path/to/vmlinux"
+    vcpus = 2
+    memory = 512
+
     rootDrive("/path/to/rootfs.ext4")
-    networkInterface {
-        interfaceId = "eth0"
-        hostDevName = "tap0"
+
+    addNetworkInterface {
+        interfaceId("eth0")
+        hostDevice("tap0")
     }
 }
 
@@ -50,17 +51,25 @@ vm.start().onSuccess {
 ```java
 import org.firecracker.sdk.*;
 
-// Create VM with builder pattern
-VirtualMachine vm = Firecracker.builder()
-    .kernelPath("/path/to/vmlinux")
-    .machineConfig(config -> config
-        .vcpuCount(2)
-        .memSizeMib(512))
-    .rootDrive("/path/to/rootfs.ext4")
-    .networkInterface(net -> net
-        .interfaceId("eth0")
-        .hostDevName("tap0"))
-    .build();
+// Create VM using Kotlin DSL from Java
+VirtualMachine vm = Firecracker.INSTANCE.createVM(builder -> {
+    builder.setName("java-vm");
+    builder.setKernel("/path/to/vmlinux");
+    builder.setVcpus(2);
+    builder.setMemory(512);
+
+    // Use convenience method for root drive
+    builder.rootDrive("/path/to/rootfs.ext4", false);
+
+    // Network configuration using builder function
+    builder.addNetworkInterface(net -> {
+        net.interfaceId("eth0");
+        net.hostDevice("tap0");
+        return null; // Required for Java lambda
+    });
+
+    return null; // Required for Java lambda
+});
 
 // Start the VM with Result handling
 vm.start()
