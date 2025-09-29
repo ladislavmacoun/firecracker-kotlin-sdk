@@ -2,7 +2,7 @@
 # This file defines all dependencies and versions for the Firecracker Kotlin/Java SDK
 
 [versions]
-kotlin = "2.2.0"
+kotlin = "2.2.20"
 ktor = "3.3.0"
 kotlinx-serialization = "1.9.0"
 kotlinx-coroutines = "1.9.0"
