@@ -14,7 +14,7 @@ mockk = "1.14.6"
 testcontainers = "2.0.1"
 junit-jupiter = "6.0.1"
 detekt = "1.23.8"
-ktlint = "13.1.0"
+ktlint = "14.0.1"
 
 [libraries]
 # HTTP Client and Serialization
